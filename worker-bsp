@@ -1,0 +1,181 @@
+cat << 'EOF' | tee -a /root/.bashrc
+
+export EDITOR=vim
+alias tmux="tmux -2"
+alias sme="sudo -Es"
+PS1="\[\e[00;33m\][\[\e[0m\]\[\e[00;35m\]\t\[\e[0m\]\[\e[00;33m\]]\[\e[0m\]\[\e[00;37m\] \[\e[0m\]\[\e[00;36m\]\u\[\e[0m\]\[\e[00;31m\]@\[\e[0m\]\[\e[00;32m\]\H\[\e[0m\]\[\e[00;37m\]\n\[\e[0m\]\[\e[01;36m\]\\$\[\e[0m\]\[\e[01;34m\]:\[\e[0m\]\[\e[00;33m\]\w\[\e[0m\]\[\e[01;34m\]:\[\e[0m\]\[\e[01;31m\]\$?\[\e[0m\]\[\e[00;31m\]>\[\e[0m\]\[\e[00;37m\] \[\e[0m\]"
+export PS1="\[\e[00;33m\][\[\e[0m\]\[\e[00;35m\]\t\[\e[0m\]\[\e[00;33m\]]\[\e[0m\]\[\e[00;37m\] \[\e[0m\]\[\e[00;36m\]\u\[\e[0m\]\[\e[00;31m\]@\[\e[0m\]\[\e[00;32m\]\H\[\e[0m\]\[\e[00;37m\]\n\[\e[0m\]\[\e[01;36m\]\\$\[\e[0m\]\[\e[01;34m\]:\[\e[0m\]\[\e[00;33m\]\w\[\e[0m\]\[\e[01;34m\]:\[\e[0m\]\[\e[01;31m\]\$?\[\e[0m\]\[\e[00;31m\]>\[\e[0m\]\[\e[00;37m\] \[\e[0m\]"
+EOF
+
+cat << EOF | tee /root/.tmux.conf
+set-window-option -g xterm-keys on
+set -g history-limit 100000
+set-option -g status-bg colour235 #base02
+set-option -g status-fg colour136 #yellow
+set-window-option -g window-status-fg colour244 #base0
+set-window-option -g window-status-bg default
+set-window-option -g window-status-current-fg colour166 #orange
+set-window-option -g window-status-current-bg default
+set-window-option -g xterm-keys on
+EOF
+
+
+mkdir -p ~/.ssh
+mkdir -p /root/.ssh
+echo "" > /root/.ssh/authorized_keys
+echo ssh-rsa your_ssh_key >> /root/.ssh/authorized_keys
+
+chmod  700 /root/.ssh
+chmod  600 /root/.ssh/*
+restorecon -R -v ~/.ssh || echo "such restorecon much scripts"
+
+DEBIAN_FRONTEND=noninteractive apt-get -y update
+DEBIAN_FRONTEND=noninteractive apt-get install -y apt-transport-https tmux vim python curl wget
+wget -bqc --output-document /opt/concourse_linux_amd64.tar.gz https://github.com/concourse/concourse/releases/download/v5.7.1/concourse-5.7.1-linux-amd64.tgz
+mkdir -p /root/.config/htop
+cat << 'HTOPEOF' | tee /root/.config/htop/htoprc
+# Beware! This file is rewritten by htop when settings are changed in the interface.
+# The parser is also very primitive, and not human-friendly.
+fields=0 48 17 18 38 39 40 2 46 47 49 109 110 111 1
+sort_key=46
+sort_direction=1
+hide_threads=0
+hide_kernel_threads=0
+hide_userland_threads=0
+shadow_other_users=0
+show_thread_names=0
+show_program_path=1
+highlight_base_name=0
+highlight_megabytes=1
+highlight_threads=1
+tree_view=1
+header_margin=1
+detailed_cpu_time=1
+cpu_count_from_zero=0
+update_process_names=0
+account_guest_in_cpu_meter=0
+color_scheme=0
+delay=15
+left_meters=AllCPUs2 Memory Swap
+left_meter_modes=1 1 1
+right_meters=Hostname Tasks LoadAverage Uptime CPU
+right_meter_modes=2 2 2 2 3
+HTOPEOF
+
+DEBIAN_FRONTEND=noninteractive apt-get -y update 
+DEBIAN_FRONTEND=noninteractive apt-get -y dist-upgrade 
+DEBIAN_FRONTEND=noninteractive apt-get -y install build-essential git python htop linux-headers-virtual linux-image-virtual linux-tools-virtual
+DEBIAN_FRONTEND=noninteractive apt-get purge -y ntfs-3g lxcfs lxd lxd-client laptop-detect mdadm emacsen-common 
+DEBIAN_FRONTEND=noninteractive apt install -y denyhosts
+ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+for i in sync gnats lxd www-data proxy uucp news lp games irc list; do userdel -r $i; done
+
+
+mkdir -p /opt/concourse/bin
+mkdir -p /opt/concourse/worker
+mkdir -p /opt/concourse/keys
+
+tar -C /opt/ -xzf /opt/concourse_linux_amd64.tar.gz
+cat <<EOF | tee /opt/concourse/keys/tsa_host_key.pub
+paste_your_key_here
+EOF
+cat <<JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ | tee /opt/concourse/keys/worker_key
+-----BEGIN RSA PRIVATE KEY-----
+paste_your_key_here
+-----END RSA PRIVATE KEY-----
+JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ
+
+mkdir -p /mnt/ramdisk
+cat <<EOF | tee /opt/concourse/bin/ramdisk.sh
+#!/bin/sh
+mount -o size=123G -t tmpfs none /mnt/ramdisk
+mkdir -p /mnt/ramdisk/worker
+EOF
+chmod +x  /opt/concourse/bin/ramdisk.sh
+
+cat <<RDKSKSK | tee /etc/systemd/system/concourse-ramdisk.service
+[Unit]
+Description=Concourse cache
+Before=network.target
+
+[Service]
+ExecStart=/opt/concourse/bin/ramdisk.sh
+Type=oneshot
+
+[Install]
+WantedBy=multi-user.target
+RDKSKSK
+
+cat <<RAMDISKCLEANUP | tee /opt/concourse/bin/lwr.sh
+#!/usr/bin/env bash
+CONCOURSE_TSA_HOST=ip_address_of_your_atc:2222 CONCOURSE_TSA_PUBLIC_KEY=/opt/concourse/keys/tsa_host_key.pub CONCOURSE_TSA_WORKER_PRIVATE_KEY=/opt/concourse/keys/worker_key /opt/concourse/bin/concourse land-worker --name $(hostname -s)
+#systemctl reboot
+RAMDISKCLEANUP
+chmod +x /opt/concourse/bin/lwr.sh
+
+cat <<RMCL | tee /etc/systemd/system/concourse-lwr.service
+[Unit]
+Description=Concourse ramdisk cleanup
+Before=network.target
+
+[Service]
+ExecStart=/opt/concourse/bin/lwr.sh
+Type=oneshot
+
+[Install]
+WantedBy=multi-user.target
+RMCL
+
+cat <<RMCLT | tee /etc/systemd/system/concourse-lwr.timer
+[Unit]
+Description=Run land worker reboot every 4 hours
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=4h
+
+[Install]
+WantedBy=timers.target
+RMCLT
+
+
+cat <<CW | tee /etc/systemd/system/concourse-worker.service
+
+[Unit]
+Description=Concourse worker
+After=network.target
+After=concourse-ramdisk.service
+#After=concourse-garden.service
+
+
+[Service]
+
+Environment=CONCOURSE_WORK_DIR=/mnt/ramdisk/worker/
+Environment=CONCOURSE_TSA_HOST=ip_address_of_your_atc:2222
+Environment=CONCOURSE_TSA_PUBLIC_KEY=/opt/concourse/keys/tsa_host_key.pub
+Environment=CONCOURSE_TSA_WORKER_PRIVATE_KEY=/opt/concourse/keys/worker_key
+Environment=CONCOURSE_GARDEN_DESTROY_CONTAINERS_ON_STARTUP=true
+Environment=CONCOURSE_GARDEN_BIN=/opt/concourse/bin/gdn
+
+
+ExecStart=/opt/concourse/bin/concourse worker
+Type=simple
+RestartSec=3s
+Restart=always
+WorkingDirectory=/opt/concourse/worker
+MemoryLimit=infinity
+LimitNPROC=infinity
+LimitNOFILE=infinity
+TasksMax=infinity
+
+[Install]
+WantedBy=multi-user.target
+
+CW
+
+systemctl daemon-reload
+systemctl enable concourse-ramdisk.service concourse-worker.service
+#concourse-lwr.service concourse-lwr.timer
+systemctl start concourse-ramdisk.service concourse-worker.service
+#concourse-lwr.service concourse-lwr.timer
+#shutdown -r +0
