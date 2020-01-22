@@ -1,7 +1,8 @@
 # concourse-bootstrap
-### Pre requisits
+### Prerequisits
 * Linux
 * Docker-ce
+#### For Yandex cloud installation, need also these:
 * Yandex [yc](https://cloud.yandex.ru/docs/cli/quickstart), if you chose Yandex Managed Database(this is recommended, because create HA PostgreSQL and maintain take some time)
   * jq
 
